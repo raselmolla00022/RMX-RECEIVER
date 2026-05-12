@@ -1,0 +1,7 @@
+telethon>=1.28.0
+python-telegram-bot>=20.0
+nest_asyncio
+cryptography
+python-dotenv
+pydantic
+requests
