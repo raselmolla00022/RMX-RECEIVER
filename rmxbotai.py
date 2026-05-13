@@ -12,7 +12,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackQueryHandler
 from dotenv import load_dotenv
 load_dotenv()
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime
@@ -20,9 +20,10 @@ import re
 
 # Encryption setup
 ENCRYPTION_KEY = os.getenv("CONFIG_ENCRYPTION_KEY")
-if ENCRYPTION_KEY:
-    cipher = Fernet(ENCRYPTION_KEY.encode())
-else:
+try:
+    cipher = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
+except (ValueError, TypeError) as e:
+    logging.warning(f"Invalid CONFIG_ENCRYPTION_KEY, encryption disabled: {e}")
     cipher = None
 
 def encrypt_data(data: str) -> str:
@@ -37,12 +38,31 @@ def decrypt_data(encrypted: str) -> str:
         return encrypted
     if not cipher:
         return encrypted
-    return cipher.decrypt(encrypted.encode()).decode()
+    try:
+        return cipher.decrypt(encrypted.encode()).decode()
+    except InvalidToken:
+        logging.warning("Encrypted config value could not be decrypted; keeping stored value")
+        return encrypted
+
+def get_required_env_int(name: str) -> int:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    try:
+        return int(value)
+    except ValueError as e:
+        raise RuntimeError(f"{name} must be an integer") from e
+
+def get_required_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
 # ---------------- CONFIG ----------------
 ADMIN_ID = 2100104246
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+API_ID = get_required_env_int("API_ID")
+API_HASH = get_required_env("API_HASH")
+BOT_TOKEN = get_required_env("BOT_TOKEN")
 # ---------------- PATH ----------------
 BASE_DIR = Path(__file__).parent
 
@@ -156,7 +176,14 @@ for setting_key, default_value in {
 for key in ("users", "balances", "prices", "capacity", "used_capacity", "daily_stats", "all_time_stats"):
     config.setdefault(key, [] if key == "users" else {})
 
-DEFAULT_2FA_PASSWORD = config["default_2fa"]
+if (
+    isinstance(config.get("default_2fa"), str)
+    and config["default_2fa"].startswith("gAAAA")
+    and os.getenv("DEFAULT_2FA")
+):
+    logging.warning("Stored default_2fa looks encrypted; using DEFAULT_2FA from environment")
+    config["default_2fa"] = os.getenv("DEFAULT_2FA")
+DEFAULT_2FA_PASSWORD = config.get("default_2fa") or ""
 all_users = set(config.get("users", []))
 users = (config.get("users", []))
 
@@ -270,6 +297,13 @@ async def send_long_message(target, text: str, **kwargs):
     for i in range(0, len(text), 3900):
         await target.reply_text(text[i:i + 3900], **kwargs)
 
+def get_reply_target(update: Update):
+    if update.message:
+        return update.message
+    if update.callback_query and update.callback_query.message:
+        return update.callback_query.message
+    return None
+
 
 def register_user(uid: int):
     uid_str = str(uid)
@@ -300,6 +334,20 @@ logging.basicConfig(level=logging.INFO)
 
 from logging.handlers import RotatingFileHandler
 
+class SecretRedactionFilter(logging.Filter):
+    def filter(self, record):
+        secrets = [BOT_TOKEN, API_HASH, ENCRYPTION_KEY]
+        message = str(record.msg)
+        changed = False
+        for secret in secrets:
+            if secret and secret in message:
+                message = message.replace(secret, "[REDACTED]")
+                changed = True
+        if changed:
+            record.msg = message
+            record.args = ()
+        return True
+
 def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.DEBUG)
@@ -317,9 +365,14 @@ def setup_logging():
     )
     fh.setFormatter(formatter)
     ch.setFormatter(formatter)
+    redaction_filter = SecretRedactionFilter()
+    fh.addFilter(redaction_filter)
+    ch.addFilter(redaction_filter)
     
     logger.addHandler(fh)
     logger.addHandler(ch)
+    logging.getLogger("telegram").setLevel(logging.INFO)
+    logging.getLogger("httpx").setLevel(logging.INFO)
 
 setup_logging()
 
@@ -924,7 +977,9 @@ async def user_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def export_users_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return
-    reply_target = update.message or update.callback_query.message
+    reply_target = get_reply_target(update)
+    if not reply_target:
+        return
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["user_id", "balance", "accounts", "daily", "all_time", "blocked"])
@@ -951,7 +1006,9 @@ async def export_users_csv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def backup_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return
-    reply_target = update.message or update.callback_query.message
+    reply_target = get_reply_target(update)
+    if not reply_target:
+        return
     backup_file = create_config_backup()
     with open(backup_file, "rb") as f:
         await reply_target.reply_document(f, filename=backup_file.name)
@@ -959,7 +1016,9 @@ async def backup_config(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return
-    reply_target = update.message or update.callback_query.message
+    reply_target = get_reply_target(update)
+    if not reply_target:
+        return
     logs = config.get("admin_logs", [])[-30:]
     if not logs:
         await reply_target.reply_text("No admin logs")
@@ -1050,7 +1109,9 @@ import socket, time
 async def check_proxy_health(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         return
-    reply_target = update.message or update.callback_query.message
+    reply_target = get_reply_target(update)
+    if not reply_target:
+        return
 
     proxies = config.get("proxies", {})
     if not proxies:
@@ -1152,6 +1213,14 @@ async def safe_send_code(phone, uid, update):
     proxy = get_proxy_from_phone(phone) if setting_enabled("proxy_enabled") else None
     user_session = get_or_create_session(uid)
 
+    async def close_failed_client(failed_client):
+        if failed_client:
+            try:
+                await failed_client.disconnect()
+            except Exception as disconnect_error:
+                logging.error(f"Disconnect failed: {disconnect_error}")
+        user_session.client = None
+
     for attempt in range(5):
         client = None
         try:
@@ -1179,16 +1248,14 @@ async def safe_send_code(phone, uid, update):
             user_session.client = client
             return True
         except AuthRestartError:
-            if client:
-                try:
-                    await client.disconnect()
-                except Exception as disconnect_error:
-                    logging.error(f"Disconnect failed: {disconnect_error}")
+            await close_failed_client(client)
             await asyncio.sleep(3)
         except FloodWaitError as e:
+            await close_failed_client(client)
             await update.message.reply_text(f"⏳ Flood wait {e.seconds}s")
             await asyncio.sleep(e.seconds)
         except Exception as e:
+            await close_failed_client(client)
             await update.message.reply_text("⚠️ Verification error. Please try again.")
             logging.error(f"OTP error for {phone}", exc_info=True)
             await asyncio.sleep(2)
@@ -1748,6 +1815,22 @@ def admin_main_menu():
         [InlineKeyboardButton("System", callback_data="admin_system")],
     ])
 
+def menu_2fa():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("View 2FA", callback_data="view2fa")],
+        [InlineKeyboardButton("Set 2FA", callback_data="set2fa")],
+        [InlineKeyboardButton("Back", callback_data="admin_back")]
+    ])
+
+def menu_sessions():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Session Stats", callback_data="sessions")],
+        [InlineKeyboardButton("Export Pending", callback_data="export_pending")],
+        [InlineKeyboardButton("Export Verified", callback_data="export_verified")],
+        [InlineKeyboardButton("Clear Old Sessions", callback_data="clear_sessions")],
+        [InlineKeyboardButton("Back", callback_data="admin_back")]
+    ])
+
 def menu_proxy():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("View Proxies", callback_data="view_proxies")],
@@ -1840,7 +1923,6 @@ def menu_system():
     ])
 
 async def admin_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print("🔥 CALLBACK TRIGGERED 🔥")
     q = update.callback_query
     await q.answer()
 
