@@ -1,0 +1,42 @@
+{
+  "default_2fa": "gAAAAABqBjbm6Rd58vrgnKDony9onRIdO63RAHQS3rhYttrep7EZHh2NfeA3tIO4l7Go5G5fkHEbLKAYAqsPWKIaS9Pqesb1Gw==",
+  "users": [
+    "2100104246"
+  ],
+  "admins": [
+    "2100104246"
+  ],
+  "blocked_users": [],
+  "support_id": "2100104246",
+  "channels": [],
+  "messages": {
+    "welcome": "Welcome to RMX Receiver!\n\nEnter your phone number with country code\nExample: +880xxxxxxxxx\n\n/cancel",
+    "help": "/start - Start receiving\n/cap - View country capacity\n/balance - View balance\n/mystats - View your stats\n/support - Contact support\n/cancel - Cancel current action",
+    "support": "Support: {support_id}"
+  },
+  "settings": {
+    "bot_enabled": true,
+    "add_account_enabled": true,
+    "proxy_enabled": true,
+    "withdraw_enabled": true,
+    "withdraw_trx_enabled": true,
+    "withdraw_leder_enabled": true,
+    "spam_checker_enabled": true,
+    "contact_checker_enabled": false,
+    "freeze_checker_enabled": false,
+    "min_withdraw": 0,
+    "max_withdraw": 0
+  },
+  "withdraw_factors": [],
+  "withdraw_requests": [],
+  "admin_logs": [],
+  "proxies": {},
+  "balances": {},
+  "prices": {},
+  "capacity": {},
+  "used_capacity": {},
+  "daily_stats": {},
+  "all_time_stats": {},
+  "last_reset": "2026-05-14",
+  "user_stats": {}
+}
