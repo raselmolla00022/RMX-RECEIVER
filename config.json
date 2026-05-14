@@ -1,5 +1,5 @@
 {
-  "default_2fa": "gAAAAABqBjbm6Rd58vrgnKDony9onRIdO63RAHQS3rhYttrep7EZHh2NfeA3tIO4l7Go5G5fkHEbLKAYAqsPWKIaS9Pqesb1Gw==",
+  "default_2fa": "gAAAAABqBlQW1LvJ08chNt93Gi14JL9vU5szCfajWgYpno5gyKGRT26h71PDoPQpd_byOhM1NIjlhGRcXR0HOwOljMcQGo0aBw==",
   "users": [
     "2100104246"
   ],
@@ -32,9 +32,15 @@
   "admin_logs": [],
   "proxies": {},
   "balances": {},
-  "prices": {},
-  "capacity": {},
-  "used_capacity": {},
+  "prices": {
+    "880": 0.2
+  },
+  "capacity": {
+    "880": 100
+  },
+  "used_capacity": {
+    "880": 0
+  },
   "daily_stats": {},
   "all_time_stats": {},
   "last_reset": "2026-05-14",
